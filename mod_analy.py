@@ -15,6 +15,7 @@ import json
 import warnings
 import sys
 import matplotlib
+from matplotlib import colors
 import numpy as np
 import pandas as pd
 from scipy import interpolate
@@ -175,8 +176,13 @@ class Fitting:
         # for i in range(num_fig):
         #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
         X, Y = np.meshgrid(x, y)
-        ax.plot_surface(X, Y, z[0], alpha=0.3, vmin=0.0, vmax=1.0, cmap=cm.cividis)
-        ax.contour(X, Y, z[0], levels=10, vmin=0.0, vmax=1.0, cmap=cm.cividis)
+        norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
+        color = cm.plasma(norm_bound(z[0]))
+        color[z[0]<0] = (0,0,0,0)
+        surf = ax.plot_surface(X, Y, z[0], alpha=1.0, facecolors=color, rstride=1, cstride=1, cmap=cm.plasma)
+        cbar = fig.colorbar(surf, shrink=0.75)
+        cbar.set_label("R2")
+        ax.contour(X, Y, z[0], levels=10, norm=norm_bound, cmap=cm.plasma)
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
         ax.set_zlim(0, 1.0)
@@ -213,8 +219,9 @@ if __name__ == "__main__":
     coef = inst.get_R_R2_mean(Cr, z, m, mode="R2")
     print("Coefficient = {}".format(coef))
     z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)], mode="R2", resolution=10, thirdparam="Cr", num_fig=1)
-    # print(z_array)
+    print(z_array)
     # res = inst.optimize_modelconst(mode="R2", method="TNC")
     # res = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
     # res = inst.optimize_modelconst(mode="R", method="global", bounds=[(1.0e-6, 100.0e-6), (0.0, 1.0), (-0.5, 0.0)])
     # print("Cr={}, z={}, m={}, R2={}".format(res.x[0], res.x[1], res.x[2], -res.fun))
+    print("Compleated!")
