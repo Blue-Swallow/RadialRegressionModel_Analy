@@ -39,6 +39,14 @@ class Fitting:
 
     def _get_fldlist_(self):
         fldlist = os.listdir(path="exp_dat")
+        if "sample" in fldlist:
+            if len(fldlist) == 1:
+                print("Please make folder which name shoud not be \"sample\" and contains data files.")
+                sys.exit()
+            else:
+                fldlist.remove("sample")
+        else:
+            pass
         return fldlist
 
     def _read_dat_(self, fldlist):
@@ -205,7 +213,7 @@ if __name__ == "__main__":
     coef = inst.get_R_R2_mean(Cr, z, m, mode="R2")
     print("Coefficient = {}".format(coef))
     z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)], mode="R2", resolution=10, thirdparam="Cr", num_fig=1)
-    print(z_array)
+    # print(z_array)
     # res = inst.optimize_modelconst(mode="R2", method="TNC")
     # res = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
     # res = inst.optimize_modelconst(mode="R", method="global", bounds=[(1.0e-6, 100.0e-6), (0.0, 1.0), (-0.5, 0.0)])
