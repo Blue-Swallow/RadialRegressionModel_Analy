@@ -1,0 +1,7 @@
+#Origin
+__pychache__
+*/*
+*.xlsx
+*.png
+!exp_dat/sample
+
