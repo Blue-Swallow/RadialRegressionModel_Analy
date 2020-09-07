@@ -10,6 +10,7 @@ radial fuel regrerssion model, which is resemble with conventional
 cylindrical hybrid rocket.
 """
 
+# %%
 import os
 import json
 import warnings
@@ -29,6 +30,7 @@ from tqdm import tqdm
 
 matplotlib.style.use("tj_origin.mplstyle")
 
+# %%%
 class Fitting:
     def __init__(self, **kwargs):
         self.param = kwargs
@@ -82,9 +84,9 @@ class Fitting:
         x_model, r_model, rdot_model = inst.exe()
         func_interp = interpolate.CubicSpline(x_model, r_model, bc_type="natural", extrapolate=None)
         r_interp = np.array([func_interp(val) for val in x])
-        if mode is "R2":    # calaculate coefficient of derming factor, R2.
+        if mode == "R2":    # calaculate coefficient of derming factor, R2.
             coefficient = metrics.r2_score(r, r_interp)
-        elif mode is "R":   # calculate correlate coefficient, R.
+        elif mode == "R":   # calculate correlate coefficient, R.
             coefficient = np.corrcoef(r, r_interp)[0][1]
         else:
             warnings.warn("Please assign proper keyword argument. Not \"{}\" but \"R\" or \"R2\"".format(mode))
@@ -108,7 +110,7 @@ class Fitting:
         func_opt = lambda const, mode: -1*self.get_R_R2_mean(const[0], const[1], const[2], mode=mode)
         if "method" in kwargs:
             method = kwargs["method"]
-            if method is "global":      # optimization for seeking global mimimum
+            if method == "global":      # optimization for seeking global mimimum
                 bounds = kwargs["bounds"]
                 res = optimize.differential_evolution(func_opt, bounds=bounds, args=(mode,))
             else:                       # optimizatioin for seeking local minimum with assigning optimization method
@@ -158,16 +160,16 @@ class Fitting:
         for i in tqdm(range(len(third_array)), desc="Total Progress", leave=True):
             for j in tqdm(range(len(x_array)), desc="Cr={}".format(third_array[i]), leave=False):
                 for k in range(len(y_array)):
-                    if thirdparam is "Cr":
+                    if thirdparam == "Cr":
                         coef = self.get_R_R2_mean(Cr=third_array[i], z=x_array[j], m=y_array[k], mode=mode)
-                    elif thirdparam is "z":
+                    elif thirdparam == "z":
                         coef = self.get_R_R2_mean(Cr=y_array[k], z=third_array[i], m=x_array[j], mode=mode)
                     else:
                         coef = self.get_R_R2_mean(Cr=y_array[j], z=x_array[j], m=third_array[i], mode=mode)
                     z[i, j, k] = coef
 
-        self._plot_(x_array, y_array, z, thirdparam="Cr", num_fig=num_fig)
-        return z
+        # self._plot_(x_array, y_array, z, thirdparam="Cr", num_fig=num_fig)
+        return x_array, y_array, z
 
     def _plot_(self, x, y, z, thirdparam="Cr", num_fig=9):
         fig = plt.figure(figsize=(24,24))
@@ -176,27 +178,62 @@ class Fitting:
         # for i in range(num_fig):
         #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
         X, Y = np.meshgrid(x, y)
-        norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
-        color = cm.plasma(norm_bound(z[0]))
-        color[z[0]<0] = (0,0,0,0)
-        surf = ax.plot_surface(X, Y, z[0], alpha=1.0, facecolors=color, rstride=1, cstride=1, cmap=cm.plasma)
+        norm_bound = plt.Normalize(0.0, 1.0)
+        cmap = cm.plasma
+        cmap.set_under((0,0,0,0), alpha=0.0)
+        surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, cmap=cmap)
         cbar = fig.colorbar(surf, shrink=0.75)
         cbar.set_label("R2")
-        ax.contour(X, Y, z[0], levels=10, norm=norm_bound, cmap=cm.plasma)
+        ax.contour(X, Y, z[0], levels=10, norm=norm_bound, cmap=cmap)
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
         ax.set_zlim(0, 1.0)
         fig.savefig("test.png", dpi=400)
 
+       
+# %%
+def plot(x, y, z, thirdparam="Cr", num_fig=9):
+    fig = plt.figure(figsize=(24,24))
+    ax = fig.add_subplot(1,1,1, projection="3d")
+    # ax = [0 for i in range(num_fig)]
+    # for i in range(num_fig):
+    #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
+    X, Y = np.meshgrid(x, y)
+    norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
+    cmap = cm.coolwarm
+    cmap_surface = cmap(np.arange(cmap.N))
+    cmap_surface[:,-1] = np.linspace(0, 1, cmap.N)
+    cmap_surface = colors.ListedColormap(cmap_surface)
+    cmap_surface.set_under((0,0,0,0), alpha=0.0)
+    cmap.set_under((0,0,0,0), alpha=0.0)
+    # cmap.set_under((0,0,0,0), alpha=0.0)
+    # cmap.set_bad(alpha=0.5)
+    surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, norm=norm_bound, cmap=cmap_surface)
+    # cmap = cm.plasma(norm_bound(z[0]))
+    # cmap[z[0]<0] = (0,0,0,0)
+    # surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, facecolors=cmap)
+    cbar = fig.colorbar(surf, shrink=0.75)
+    cbar.set_label("R2")
+    cntr_z = ax.contour(X, Y, z[0], \
+        levels=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], \
+        zdir="z", offset=0.0, norm=norm_bound, cmap=cmap)
+    ax.clabel(cntr_z, inline=True, colors="black", fontsize=10)
+    ax.set_xlim(X.min(), X.max())
+    ax.set_ylim(Y.min(), Y.max())
+    ax.set_zlim(0, 1.0)
+    fig.savefig("test.png", dpi=400)
 
 
 
+
+# %%
 
 
 
 
 
 if __name__ == "__main__":
+    # %%
     PARAM = {"rho_f": 1190,     # [kg/m^3] solid fuel density
              "M_ox": 32.0e-3,   # [kg/mol]
              "T": 300,          # [K] oxidizer tempreature
@@ -212,6 +249,15 @@ if __name__ == "__main__":
              "rdot_0": 0.0,     # rdot=0 when x = 0, boundary condition
              "Vf_mode": False   # mode selection using axial or radial integretioin for mf calculation
             }
+    
+    # %%
+    # Temporal Code to Debug the function of plot
+    inst = Fitting(**PARAM)
+    x_array, y_array, z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)],\
+         mode="R2", resolution=100, thirdparam="Cr", num_fig=1)
+    plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
+
+    # %%
     inst = Fitting(**PARAM)
     Cr = 15.0e-6
     z = 0.4
