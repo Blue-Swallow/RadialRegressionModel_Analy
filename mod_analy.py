@@ -193,16 +193,18 @@ class Fitting:
        
 # %%
 def plot(x, y, z, thirdparam="Cr", num_fig=9):
-    fig = plt.figure(figsize=(24,24))
+    fig = plt.figure(figsize=(30,24))
     ax = fig.add_subplot(1,1,1, projection="3d")
     # ax = [0 for i in range(num_fig)]
     # for i in range(num_fig):
     #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
     X, Y = np.meshgrid(x, y)
+    surface_alpha_max = 0.5
+    surface_alpha_min = 0.0
     norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
     cmap = cm.coolwarm
     cmap_surface = cmap(np.arange(cmap.N))
-    cmap_surface[:,-1] = np.linspace(0, 1, cmap.N)
+    cmap_surface[:,-1] = np.linspace(surface_alpha_min, surface_alpha_max, cmap.N)
     cmap_surface = colors.ListedColormap(cmap_surface)
     cmap_surface.set_under((0,0,0,0), alpha=0.0)
     cmap.set_under((0,0,0,0), alpha=0.0)
@@ -213,14 +215,33 @@ def plot(x, y, z, thirdparam="Cr", num_fig=9):
     # cmap[z[0]<0] = (0,0,0,0)
     # surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, facecolors=cmap)
     cbar = fig.colorbar(surf, shrink=0.75)
-    cbar.set_label("R2")
+    cbar.set_label("R2", fontsize=50)
+    cbar.ax.tick_params(labelsize=40)
     cntr_z = ax.contour(X, Y, z[0], \
         levels=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], \
         zdir="z", offset=0.0, norm=norm_bound, cmap=cmap)
-    ax.clabel(cntr_z, inline=True, colors="black", fontsize=10)
-    ax.set_xlim(X.min(), X.max())
-    ax.set_ylim(Y.min(), Y.max())
+    cntr_z.clabel(inline=1, colors="k", fontsize=5, use_clabeltext=True)
+    index_xmax, index_ymax = np.unravel_index(np.argmax(z[0]), z[0].shape)
+    maximum = (X[index_xmax, index_ymax], Y[index_xmax, index_ymax], z[0].max())
+    xmax = maximum[0]
+    ymax = maximum[1]
+    zmax = maximum[2]
+    ax.plot([xmax,x.max()], [ymax, ymax], [0,0], c="k")
+    ax.plot([xmax,xmax], [y.min(), ymax], [0,0], c="k")
+    ax.plot([xmax,xmax], [ymax, ymax], [0,zmax], c="k")
+    ax.plot([xmax], [ymax], [zmax], marker="o", ms=30, c="k")
+    ax.text(xmax, y.min()-0.12, 0, \
+        "{}={}".format("z", round(xmax,4)), "x", zorder=10, fontsize=50)
+    ax.text(x.max()+0.1, ymax-0.05, 0, \
+        "{}={}".format("m", round(ymax,4)), "y", zorder=10, fontsize=50)
+    ax.text(xmax, ymax, 1.1*zmax, \
+        "R2$_{max}$"+"={}".format(round(zmax,4)), zorder=10, fontsize=60)
+    ax.set_xlim(x.min(), x.max())
+    ax.set_ylim(y.min(), y.max())
     ax.set_zlim(0, 1.0)
+    ax.set_zlabel("$R2$", fontsize=50)
+    ax.tick_params(axis="both", labelsize=40)
+    fig.suptitle("$C_r$={}".format("***"), fontsize=80)
     fig.savefig("test.png", dpi=400)
 
 
