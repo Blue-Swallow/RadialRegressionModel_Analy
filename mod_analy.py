@@ -22,6 +22,7 @@ import pandas as pd
 from scipy import interpolate
 from scipy import optimize
 from sklearn import metrics
+from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
@@ -44,7 +45,7 @@ class Fitting:
         fldlist = os.listdir(path="exp_dat")
         if "sample" in fldlist:
             if len(fldlist) == 1:
-                print("Please make folder which name shoud not be \"sample\" and contains data files.")
+                print("Please make folder whose name shoud not be \"sample\" and contains data files.")
                 sys.exit()
             else:
                 fldlist.remove("sample")
@@ -70,16 +71,17 @@ class Fitting:
     def get_R_R2_mean(self, Cr, z, m, mode="R2"):
         coef = np.array([])
         for testname, exp_cond in self.exp_cond.items():
-            x = np.array(self.shape_dat[testname].x)
-            r = np.array(self.shape_dat[testname].r)
-            Pc = exp_cond["Pc"]
-            Vox = exp_cond["Vox"]
-            d = exp_cond["d"]
-            tmp = self.get_R_R2(x, r, Pc, Vox, d, Cr, z, m, mode=mode)
+            tmp = self.get_R_R2(testname, Cr, z, m, mode=mode)
             coef = np.append(coef, tmp)
         return coef.mean()
 
-    def get_R_R2(self, x, r, Pc, Vox, d, Cr, z, m, mode="R2"):
+    def get_R_R2(self, testname, Cr, z, m, mode="R2"):
+        x = np.array(self.shape_dat[testname].x)
+        r = np.array(self.shape_dat[testname].r)
+        exp_cond = self.exp_cond[testname]
+        Pc = exp_cond["Pc"]
+        Vox = exp_cond["Vox"]
+        d = exp_cond["d"]        
         inst = mod_steady_shape.Main(Pc, Vox, **self.param, d=d, Cr=Cr, z=z, m=m)
         x_model, r_model, rdot_model = inst.exe()
         func_interp = interpolate.CubicSpline(x_model, r_model, bc_type="natural", extrapolate=None)
@@ -94,6 +96,7 @@ class Fitting:
         return coefficient
 
     def optimize_modelconst(self, mode="R2", **kwargs):
+        print("Now optimizing model costants. Please wait a minute.")
         if "Cr_init" in kwargs:
             Cr_init = kwargs["Cr_init"]
         else:
@@ -117,15 +120,59 @@ class Fitting:
                 res = optimize.minimize(func_opt, x0=init_const, args=(mode,), method=method)
         else:                           # optimizaiton for seeking local minimum
             res = optimize.minimize(func_opt, x0=init_const, args=(mode,))
+        print("Finishi optimization of model constans!")
         return res
+
+    def gen_excomp_figlist(self, Cr, z, m, mode="R2"):
+        dic={}
+        for testname in self.exp_cond:
+            dic_tmp={}
+            dic_tmp["coef"] = self.get_R_R2(testname ,Cr, z, m, mode=mode)
+            dic_tmp["fig"] = self.plot_expcomp(testname, Cr, z, m, dic_tmp["coef"], mode=mode)
+            dic[testname] = dic_tmp
+        return dic
+
+    def plot_expcomp(self, testname, Cr, z, m, r_r2, mode="R2"):
+        x = np.array(self.shape_dat[testname].x)
+        r = np.array(self.shape_dat[testname].r)
+        exp_cond = self.exp_cond[testname]
+        Pc = exp_cond["Pc"]
+        Vox = exp_cond["Vox"]
+        d = exp_cond["d"]        
+        inst = mod_steady_shape.Main(Pc, Vox, **self.param, d=d, Cr=Cr, z=z, m=m)
+        x_model, r_model, rdot_model = inst.exe()
+        fig = plt.figure(figsize=(12,9))
+        ax = fig.add_subplot(111)
+        ax.plot(x*1e+3, r*1e+3, color="r", label="Experiment")
+        ax.plot(x_model*1e+3, r_model*1e+3, color="b", label="Calculation")
+        if r.max() > r_model.max():
+            ylim_max = r.max()
+        else:
+            ylim_max = r_model.max()
+        ax.set_ylim(0, ylim_max*1e+3)
+        ax.set_xlim(0, self.param["x_max"]*1e+3)
+        if mode == "R2":
+            text = "R2"
+        else:
+            text= "R"
+        ax.text(0.05*self.param["x_max"]*1e+3, 0.9*ylim_max*1e+3, "{}={}".format(text, round(r_r2,3)), fontsize=30)
+        ax.text(0.05*self.param["x_max"]*1e+3, 0.75*ylim_max*1e+3, \
+            "$P_c$= {} MPa, $d$= {} mm,".format(round(Pc*1e-6,3), round(d*1e+3,2))\
+            +"\n$V_{ox}$"+"= {} m/s".format(round(Vox,1)), fontsize=25)
+        ax.set_title(testname, fontsize=40)
+        ax.legend(loc="lower right")
+        ax.set_xlabel("Axial distance $x$ [mm]")
+        ax.set_ylabel("Radial regression distance $r$ [mm]")
+        return fig
+
+
     
-    def plot_R_R2(self, bounds, mode="R2", resolution=10, thirdparam="Cr", num_fig=9, **kwargs):
+    def gen_R_R2_figlist(self, bounds, mode="R2", resolution=10, thirdparam="Cr", num_fig=9, **kwargs):
         bound_Cr = bounds[0]
         bound_z = bounds[1]
         bound_m = bounds[2]
         if thirdparam == "Cr":
             interb_z = (bound_z[1] - bound_z[0])/resolution
-            x_array = np.arange(bound_z[0], bound_z[1]+interb_z/2, interb_z)
             interb_m = (bound_m[1] - bound_m[0])/resolution
             y_array = np.arange(bound_m[0], bound_m[1]+interb_m/2, interb_m)
             if num_fig == 1:
@@ -171,7 +218,7 @@ class Fitting:
         # self._plot_(x_array, y_array, z, thirdparam="Cr", num_fig=num_fig)
         return x_array, y_array, z
 
-    def _plot_(self, x, y, z, thirdparam="Cr", num_fig=9):
+    def plot_R_R2_contour(self, x, y, z, thirdparam="Cr", num_fig=9):
         fig = plt.figure(figsize=(24,24))
         ax = fig.add_subplot(1,1,1, projection="3d")
         # ax = [0 for i in range(num_fig)]
@@ -273,22 +320,43 @@ if __name__ == "__main__":
     
     # %%
     # Temporal Code to Debug the function of plot
-    inst = Fitting(**PARAM)
-    x_array, y_array, z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)],\
-         mode="R2", resolution=100, thirdparam="Cr", num_fig=1)
-    plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
+    # inst = Fitting(**PARAM)
+    # x_array, y_array, z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)],\
+    #      mode="R2", resolution=100, thirdparam="Cr", num_fig=1)
+    # plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
 
     # %%
     inst = Fitting(**PARAM)
-    Cr = 15.0e-6
-    z = 0.4
-    m = -0.26
-    coef = inst.get_R_R2_mean(Cr, z, m, mode="R2")
-    print("Coefficient = {}".format(coef))
-    z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)], mode="R2", resolution=10, thirdparam="Cr", num_fig=1)
-    print(z_array)
-    # res = inst.optimize_modelconst(mode="R2", method="TNC")
-    # res = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
-    # res = inst.optimize_modelconst(mode="R", method="global", bounds=[(1.0e-6, 100.0e-6), (0.0, 1.0), (-0.5, 0.0)])
+    ## optimization for model constants
+    RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
+    RESULT = {"Cr": RES_TMP.x[0],
+              "z": RES_TMP.x[1],
+              "m": RES_TMP.x[2],
+              "R2mean": -RES_TMP.fun
+              }
+    ## calculate R2 for each experiment    
+    R2 = {}
+    for testname in inst.exp_cond:
+        R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    
+    OUTPUT = {"cond": PARAM,
+              "result": RESULT,
+              "R2": R2
+              }
+    ## output calculation condition and result
+    FLDNAME = datetime.now().strftime("%Y_%m%d_%H%M%S")
+    os.mkdir(FLDNAME)
+    with open(os.path.join(FLDNAME, "result.json"), "w") as f:
+        json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
+    ## output figures which compare experimental and calculated result
+    FLDNAME_EXPCOMP = "fig_expcomp"
+    os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
+    FIG_COMP = inst.gen_excomp_figlist(RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    for testname, dic in FIG_COMP.items():
+        dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_EXPCOMP, "{}.png".format(testname)), dpi=300)
+    
+    # %%
     # print("Cr={}, z={}, m={}, R2={}".format(res.x[0], res.x[1], res.x[2], -res.fun))
     print("Compleated!")
+
+# %%
