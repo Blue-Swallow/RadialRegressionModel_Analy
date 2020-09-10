@@ -33,15 +33,43 @@ matplotlib.style.use("tj_origin.mplstyle")
 
 # %%%
 class Fitting:
-    def __init__(self, **kwargs):
-        self.param = kwargs
-        if "fldlist" in kwargs:
-            self.fldlist = kwargs["fldlist"]
+    """Class for fitting several model constants to experimental results,
+    and output some figures.
+
+    Attributes
+    ----------
+    param: dict
+        dictionary of setting of fitting calculation
+    fldlist: list of string
+        list of the folder name of experimental results
+    exp_cond: dict
+        dictionary of experimental condition for each experiment
+    shape_dat: dict of pandas.DataFrame
+        dictionary of regressioin shape
+    """
+    def __init__(self, cond):
+        """ Constructor
+        
+        Parameters
+        ----------
+        cond : dict
+            dictionary of setting for fitting calculation
+        """
+        self.param = cond
+        if "fldlist" in cond:
+            self.fldlist = cond["fldlist"]
         else:
             self.fldlist = self._get_fldlist_()
         self.exp_cond, self.shape_dat = self._read_dat_(self.fldlist)
 
     def _get_fldlist_(self):
+        """function to get the list of experimental folder name
+        
+        Returns
+        -------
+        fldlist: list of string
+            dictionary of experimental folder name
+        """
         fldlist = os.listdir(path="exp_dat")
         if "sample" in fldlist:
             if len(fldlist) == 1:
@@ -54,6 +82,20 @@ class Fitting:
         return fldlist
 
     def _read_dat_(self, fldlist):
+        """ function to read each experimental condition and data of regression shape
+        
+        Parameters
+        ----------
+        fldlist : list of string
+            list of experimental folder name
+        
+        Returns
+        -------
+        exp_cond: dict of dict
+            dictionary of each experimental condition
+        shape_dat: dict of pandas.DataFrame
+            dictionary of fuel regression shape data
+        """
         exp_cond = {}
         shape_dat = {}
         for fldname in fldlist:
@@ -69,6 +111,24 @@ class Fitting:
         return exp_cond, shape_dat
 
     def get_R_R2_mean(self, Cr, z, m, mode="R2"):
+        """ Calculate the mean R or R2 for all experimental data.
+        
+        Parameters
+        ----------
+        Cr : float
+            proportional constant of fuel regression model
+        z : float
+            mass flux exponent constant of fuel regression model
+        m : float
+            axial direction exponent constant of fuel regression model
+        mode : str, optional
+            mode selection for output value whether "R" or "R2", by default "R2"
+        
+        Returns
+        -------
+        coef.mean()
+            mean value of coefficient
+        """
         coef = np.array([])
         for testname, exp_cond in self.exp_cond.items():
             tmp = self.get_R_R2(testname, Cr, z, m, mode=mode)
@@ -76,6 +136,26 @@ class Fitting:
         return coef.mean()
 
     def get_R_R2(self, testname, Cr, z, m, mode="R2"):
+        """ Calculate the R or R2 for assgined experimental data.
+        
+        Parameters
+        ----------
+        testname : str
+            experimental name, which is the same of folder name.
+        Cr : float
+            proportional constant of fuel regression model
+        z : float
+            mass flux exponent constant of fuel regression model
+        m : float
+            axial direction exponent constant of fuel regression model
+        mode : str, optional
+            mode selection for output value whether "R" or "R2", by default "R2"
+        
+        Returns
+        -------
+        coef: float
+            the value of coefficient. "R" or "R2"
+        """
         x = np.array(self.shape_dat[testname].x)
         r = np.array(self.shape_dat[testname].r)
         exp_cond = self.exp_cond[testname]
@@ -96,6 +176,19 @@ class Fitting:
         return coefficient
 
     def optimize_modelconst(self, mode="R2", **kwargs):
+        """ Optimization for model constants, Cr, z, and m.
+        
+        Parameters
+        ----------
+        mode : str, optional
+            mode selection for output value whether "R" or "R2", by default "R2"
+        
+        Returns
+        -------
+        res: the output object of scipy.optimize.minimize
+            "res" contains the list of optimized constans and minimized coefficient so on.
+            Please look the page of scipy documentation for optimize.minimize
+        """
         print("Now optimizing model costants. Please wait a minute.")
         if "Cr_init" in kwargs:
             Cr_init = kwargs["Cr_init"]
@@ -124,6 +217,26 @@ class Fitting:
         return res
 
     def gen_excomp_figlist(self, Cr, z, m, mode="R2"):
+        """ Generate the figures which compare the experimental result and calculation result obtained by assigned constants.
+        
+        Parameters
+        ----------
+        testname : str
+            experimental name, which is the same of folder name.
+        Cr : float
+            proportional constant of fuel regression model
+        z : float
+            mass flux exponent constant of fuel regression model
+        m : float
+            axial direction exponent constant of fuel regression model
+        mode : str, optional
+            mode selection for output value whether "R" or "R2", by default "R2"
+        
+        Returns
+        -------
+        dic: dict of matplotlib.pyplot.figure
+            dictionary of matplotlib figures
+        """
         dic={}
         for testname in self.exp_cond:
             dic_tmp={}
@@ -133,6 +246,28 @@ class Fitting:
         return dic
 
     def plot_expcomp(self, testname, Cr, z, m, r_r2, mode="R2"):
+        """ plot a figures which comaper the regressionshape of experimental result and calcultion.
+        
+        Parameters
+        ----------
+        testname : str
+            experimental name, which is the same of folder name.
+        Cr : float
+            proportional constant of fuel regression model
+        z : float
+            mass flux exponent constant of fuel regression model
+        m : float
+            axial direction exponent constant of fuel regression model
+        r_r2 : float
+            coefficient for write on a figure
+        mode : str, optional
+            mode selection for output value whether "R" or "R2", by default "R2"
+        
+        Returns
+        -------
+        fig: matplotlib.pyplot.figure
+            figure object of matplotlib
+        """
         x = np.array(self.shape_dat[testname].x)
         r = np.array(self.shape_dat[testname].r)
         exp_cond = self.exp_cond[testname]
@@ -326,7 +461,7 @@ if __name__ == "__main__":
     # plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
 
     # %%
-    inst = Fitting(**PARAM)
+    inst = Fitting(PARAM)
     ## optimization for model constants
     RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
     RESULT = {"Cr": RES_TMP.x[0],
