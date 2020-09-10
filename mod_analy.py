@@ -161,8 +161,8 @@ class Fitting:
         exp_cond = self.exp_cond[testname]
         Pc = exp_cond["Pc"]
         Vox = exp_cond["Vox"]
-        d = exp_cond["d"]        
-        inst = mod_steady_shape.Main(Pc, Vox, **self.param, d=d, Cr=Cr, z=z, m=m)
+        d = exp_cond["d"]
+        inst = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
         x_model, r_model, rdot_model = inst.exe()
         func_interp = interpolate.CubicSpline(x_model, r_model, bc_type="natural", extrapolate=None)
         r_interp = np.array([func_interp(val) for val in x])
@@ -213,7 +213,7 @@ class Fitting:
                 res = optimize.minimize(func_opt, x0=init_const, args=(mode,), method=method)
         else:                           # optimizaiton for seeking local minimum
             res = optimize.minimize(func_opt, x0=init_const, args=(mode,))
-        print("Finishi optimization of model constans!")
+        print("Finish optimization of model constants!")
         return res
 
     def gen_excomp_figlist(self, Cr, z, m, mode="R2"):
@@ -237,15 +237,24 @@ class Fitting:
         dic: dict of matplotlib.pyplot.figure
             dictionary of matplotlib figures
         """
+        xmax = 0.0
+        rmax = 0.0
+        for testname in self.exp_cond:
+            xtmp = np.array(self.shape_dat[testname].x).max()
+            if xmax < xtmp:
+                xmax = xtmp
+            rtmp = np.array(self.shape_dat[testname].r).max()
+            if rmax < rtmp:
+                rmax = rtmp
         dic={}
         for testname in self.exp_cond:
             dic_tmp={}
             dic_tmp["coef"] = self.get_R_R2(testname ,Cr, z, m, mode=mode)
-            dic_tmp["fig"] = self.plot_expcomp(testname, Cr, z, m, dic_tmp["coef"], mode=mode)
+            dic_tmp["fig"] = self.plot_expcomp(testname, Cr, z, m, dic_tmp["coef"], mode=mode, xmax=xmax, rmax=rmax)
             dic[testname] = dic_tmp
         return dic
 
-    def plot_expcomp(self, testname, Cr, z, m, r_r2, mode="R2"):
+    def plot_expcomp(self, testname, Cr, z, m, r_r2, mode="R2", xmax=None, rmax=None):
         """ plot a figures which comaper the regressionshape of experimental result and calcultion.
         
         Parameters
@@ -262,6 +271,10 @@ class Fitting:
             coefficient for write on a figure
         mode : str, optional
             mode selection for output value whether "R" or "R2", by default "R2"
+        xmax: float, optional
+            x limit of figure x axis, by default None. If None, code uses maximum x of experiment
+        rmax: float, optional
+            r limit of figure y axis, by default None. If None, code uses maximum r of experiment
         
         Returns
         -------
@@ -274,24 +287,28 @@ class Fitting:
         Pc = exp_cond["Pc"]
         Vox = exp_cond["Vox"]
         d = exp_cond["d"]        
-        inst = mod_steady_shape.Main(Pc, Vox, **self.param, d=d, Cr=Cr, z=z, m=m)
+        inst = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
         x_model, r_model, rdot_model = inst.exe()
         fig = plt.figure(figsize=(12,9))
         ax = fig.add_subplot(111)
         ax.plot(x*1e+3, r*1e+3, color="r", label="Experiment")
         ax.plot(x_model*1e+3, r_model*1e+3, color="b", label="Calculation")
-        if r.max() > r_model.max():
-            ylim_max = r.max()
+        if rmax is None:
+            rmax = r.max()
         else:
-            ylim_max = r_model.max()
-        ax.set_ylim(0, ylim_max*1e+3)
-        ax.set_xlim(0, self.param["x_max"]*1e+3)
+            pass
+        if xmax is None:
+            xmax = x.max()
+        else:
+            pass
+        ax.set_ylim(0, rmax*1e+3)
+        ax.set_xlim(0, xmax*1e+3)
         if mode == "R2":
             text = "R2"
         else:
             text= "R"
-        ax.text(0.05*self.param["x_max"]*1e+3, 0.9*ylim_max*1e+3, "{}={}".format(text, round(r_r2,3)), fontsize=30)
-        ax.text(0.05*self.param["x_max"]*1e+3, 0.75*ylim_max*1e+3, \
+        ax.text(0.05*xmax*1e+3, 0.9*rmax*1e+3, "{}={}".format(text, round(r_r2,3)), fontsize=30)
+        ax.text(0.05*xmax*1e+3, 0.75*rmax*1e+3, \
             "$P_c$= {} MPa, $d$= {} mm,".format(round(Pc*1e-6,3), round(d*1e+3,2))\
             +"\n$V_{ox}$"+"= {} m/s".format(round(Vox,1)), fontsize=25)
         ax.set_title(testname, fontsize=40)
@@ -374,7 +391,7 @@ class Fitting:
 
        
 # %%
-def plot(x, y, z, thirdparam="Cr", num_fig=9):
+def plot(x, y, z, thirdparam="Cr"):
     fig = plt.figure(figsize=(30,24))
     ax = fig.add_subplot(1,1,1, projection="3d")
     # ax = [0 for i in range(num_fig)]
@@ -390,12 +407,7 @@ def plot(x, y, z, thirdparam="Cr", num_fig=9):
     cmap_surface = colors.ListedColormap(cmap_surface)
     cmap_surface.set_under((0,0,0,0), alpha=0.0)
     cmap.set_under((0,0,0,0), alpha=0.0)
-    # cmap.set_under((0,0,0,0), alpha=0.0)
-    # cmap.set_bad(alpha=0.5)
     surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, norm=norm_bound, cmap=cmap_surface)
-    # cmap = cm.plasma(norm_bound(z[0]))
-    # cmap[z[0]<0] = (0,0,0,0)
-    # surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, facecolors=cmap)
     cbar = fig.colorbar(surf, shrink=0.75)
     cbar.set_label("R2", fontsize=50)
     cbar.ax.tick_params(labelsize=40)
@@ -424,7 +436,8 @@ def plot(x, y, z, thirdparam="Cr", num_fig=9):
     ax.set_zlabel("$R2$", fontsize=50)
     ax.tick_params(axis="both", labelsize=40)
     fig.suptitle("$C_r$={}".format("***"), fontsize=80)
-    fig.savefig("test.png", dpi=400)
+    # fig.savefig("test.png", dpi=400)
+    return fig
 
 
 
@@ -447,11 +460,25 @@ if __name__ == "__main__":
              "C2": 1.61e-9,  # experimental constant of experimental regression rate formula
              "n": 1.0,       # experimental exponent constant of pressure
              "dx": 0.1e-3,      # [m] space resolution
-             "x_max": 12.6e-3,  # [m] maximum calculation region
+            #  "x_max": 12.6e-3,  # [m] maximum calculation region
              "r_0": 0.0,        # r=0.0 when x = 0, boudanry condition
              "rdot_0": 0.0,     # rdot=0 when x = 0, boundary condition
-             "Vf_mode": False   # mode selection using axial or radial integretioin for mf calculation
+             "Vf_mode": False , # mode selection using axial or radial integretioin for mf calculation
+             "use_Vf": False    # mode selection for using experimental Vf insted of Vf empirical formula or not.
             }
+    
+    BOUND = {"Cr": (1.0e-6, 30.0e-6),
+             "z": (0.0, 1.0),
+             "m": (-0.5, 0.0)
+             }
+
+    CONTOUR_PLOT = {"Cr_bnd": (14.0e-6, 16.0e-6),      # plot range of Cr
+                    "z_bnd": (0.2, 0.6),               # plot range of z
+                    "m_bnd": (-0.4, -0.1),             # plot range of m
+                    "resol": 100,                      # the number of calculating point for x and y axis direction
+                    "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
+                    "num_fig": 1                       # the number of figures. This value is the same of the number of variety of "thirdparam".
+                    }
     
     # %%
     # Temporal Code to Debug the function of plot
@@ -467,7 +494,8 @@ if __name__ == "__main__":
     RESULT = {"Cr": RES_TMP.x[0],
               "z": RES_TMP.x[1],
               "m": RES_TMP.x[2],
-              "R2mean": -RES_TMP.fun
+              "R2mean": -RES_TMP.fun,
+              "success": RES_TMP.success
               }
     ## calculate R2 for each experiment    
     R2 = {}
@@ -475,6 +503,8 @@ if __name__ == "__main__":
         R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
     
     OUTPUT = {"cond": PARAM,
+              "bounds": BOUND,
+              "contour_plot": CONTOUR_PLOT,
               "result": RESULT,
               "R2": R2
               }
