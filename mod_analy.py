@@ -15,6 +15,7 @@ import os
 import json
 import warnings
 import sys
+import copy
 import matplotlib
 from matplotlib import colors
 import numpy as np
@@ -103,6 +104,8 @@ class Fitting:
                 tmp = json.load(f)
                 tmp["Pc"] = tmp["Pc"]*1e+6      # convert unit MPa to Pa
                 tmp["d"] = tmp["d"]*1e-3        # convert unit mm to m
+                if tmp["Vf"] is not None:
+                    tmp["Vf"] = tmp["Vf"]*1e-3  # convert unit mm to m
                 exp_cond[fldname] = tmp
             tmp = pd.read_csv(os.path.join("exp_dat", fldname, "shape_dat.csv"), header=0, skiprows=[1,])
             tmp.x = tmp.x*1e-3  # convert unit mm to m
@@ -162,8 +165,13 @@ class Fitting:
         Pc = exp_cond["Pc"]
         Vox = exp_cond["Vox"]
         d = exp_cond["d"]
-        inst = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
-        x_model, r_model, rdot_model = inst.exe()
+        if exp_cond["Vf"] is None:
+            tmp_param = copy.deepcopy(self.param)
+            tmp_param["use_Vf"] = False
+            obj = mod_steady_shape.Main(Pc, Vox, **tmp_param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
+        else:
+            obj = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m, Vf=exp_cond["Vf"])
+        x_model, r_model, rdot_model = obj.exe()
         func_interp = interpolate.CubicSpline(x_model, r_model, bc_type="natural", extrapolate=None)
         r_interp = np.array([func_interp(val) for val in x])
         if mode == "R2":    # calaculate coefficient of derming factor, R2.
@@ -245,7 +253,7 @@ class Fitting:
                 xmax = xtmp
             rtmp = np.array(self.shape_dat[testname].r).max()
             if rmax < rtmp:
-                rmax = rtmp
+                rmax = rtmp *1.2
         dic={}
         for testname in self.exp_cond:
             dic_tmp={}
@@ -286,9 +294,17 @@ class Fitting:
         exp_cond = self.exp_cond[testname]
         Pc = exp_cond["Pc"]
         Vox = exp_cond["Vox"]
-        d = exp_cond["d"]        
-        inst = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
-        x_model, r_model, rdot_model = inst.exe()
+        d = exp_cond["d"]
+        if exp_cond["Vf"] is None:
+            Vf_ex = "null"
+            tmp_param = copy.deepcopy(self.param)
+            tmp_param["use_Vf"] = False
+            obj = mod_steady_shape.Main(Pc, Vox, **tmp_param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m)
+        else:
+            Vf_ex = exp_cond["Vf"]
+            obj = mod_steady_shape.Main(Pc, Vox, **self.param, x_max=x.max(), d=d, Cr=Cr, z=z, m=m, Vf=exp_cond["Vf"])
+        Vf_th = obj.func_Vf(Vox, Pc)
+        x_model, r_model, rdot_model = obj.exe()
         fig = plt.figure(figsize=(12,9))
         ax = fig.add_subplot(111)
         ax.plot(x*1e+3, r*1e+3, color="r", label="Experiment")
@@ -307,24 +323,43 @@ class Fitting:
             text = "R2"
         else:
             text= "R"
+        Vf_th_text = round(Vf_th*1e+3, 2)
+        if type(Vf_ex) is float:
+            Vf_ex_text = round(Vf_ex*1e+3, 2)
         ax.text(0.05*xmax*1e+3, 0.9*rmax*1e+3, "{}={}".format(text, round(r_r2,3)), fontsize=30)
-        ax.text(0.05*xmax*1e+3, 0.75*rmax*1e+3, \
+        ax.text(0.05*xmax*1e+3, 0.72*rmax*1e+3, \
             "$P_c$= {} MPa, $d$= {} mm,".format(round(Pc*1e-6,3), round(d*1e+3,2))\
-            +"\n$V_{ox}$"+"= {} m/s".format(round(Vox,1)), fontsize=25)
+            +"$V_{ox}$"+"= {} m/s".format(round(Vox,1))\
+            +"\n$V_{f,ex}$"+"= {} mm/s".format(Vf_ex_text) + ", $V_{f,th}$"+"= {} mm/s".format(Vf_th_text), fontsize=25)
         ax.set_title(testname, fontsize=40)
         ax.legend(loc="lower right")
         ax.set_xlabel("Axial distance $x$ [mm]")
         ax.set_ylabel("Radial regression distance $r$ [mm]")
         return fig
 
+    def gen_R_R2_figlist(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, **kwargs):
+        z_array, x_array, y_array, third_array = self.cal_R_R2_contour(bounds=bounds, mode=mode,\
+            resolution=resolution, thirdparam=thirdparam, num_fig=num_fig, **kwargs)
+        fig_list = []
+        for z, third in zip(z_array, third_array):
+            fig, xmax, ymax, zmax = self.plot_R_R2_contour(x_array, y_array, z, third, thirdparam=thirdparam, mode=mode)
+            dic = {"third": third,
+                   "fig": fig,
+                   "xmax": xmax,
+                   "ymax": ymax,
+                   "zmax": zmax
+                  }
+            fig_list.append(dic)
+        return fig_list
+            
 
-    
-    def gen_R_R2_figlist(self, bounds, mode="R2", resolution=10, thirdparam="Cr", num_fig=9, **kwargs):
+    def cal_R_R2_contour(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, **kwargs):
         bound_Cr = bounds[0]
         bound_z = bounds[1]
         bound_m = bounds[2]
         if thirdparam == "Cr":
             interb_z = (bound_z[1] - bound_z[0])/resolution
+            x_array = np.arange(bound_z[0], bound_z[1]+interb_z/2, interb_z)
             interb_m = (bound_m[1] - bound_m[0])/resolution
             y_array = np.arange(bound_m[0], bound_m[1]+interb_m/2, interb_m)
             if num_fig == 1:
@@ -357,8 +392,8 @@ class Fitting:
             sys.exit()
         z = np.empty((num_fig, resolution+1, resolution+1))
         for i in tqdm(range(len(third_array)), desc="Total Progress", leave=True):
-            for j in tqdm(range(len(x_array)), desc="Cr={}".format(third_array[i]), leave=False):
-                for k in range(len(y_array)):
+            for j in tqdm(range(len(x_array)), desc="{0}={1:6.3e}".format(thirdparam, third_array[i]), leave=False):
+                for k in tqdm(range(len(y_array)), leave=False):
                     if thirdparam == "Cr":
                         coef = self.get_R_R2_mean(Cr=third_array[i], z=x_array[j], m=y_array[k], mode=mode)
                     elif thirdparam == "z":
@@ -366,90 +401,68 @@ class Fitting:
                     else:
                         coef = self.get_R_R2_mean(Cr=y_array[j], z=x_array[j], m=third_array[i], mode=mode)
                     z[i, j, k] = coef
+        return z, x_array, y_array, third_array
 
-        # self._plot_(x_array, y_array, z, thirdparam="Cr", num_fig=num_fig)
-        return x_array, y_array, z
-
-    def plot_R_R2_contour(self, x, y, z, thirdparam="Cr", num_fig=9):
-        fig = plt.figure(figsize=(24,24))
+    def plot_R_R2_contour(self, x, y, z, val_thirdparam, thirdparam="Cr", mode="R2"):
+        if thirdparam == "Cr":
+            xaxis = "z"
+            yaxis = "m"
+        elif thirdparam == "z":
+            xaxis = "m"
+            yaxis = "Cr"
+        elif thirdparam == "m":
+            xaxis = "z"
+            yaxis = "Cr"
+        else:
+            print("There is no such a parameter thirdparam=\"{}\"".format(thirdparam))
+            sys.exit()
+        fig = plt.figure(figsize=(30,24))
         ax = fig.add_subplot(1,1,1, projection="3d")
-        # ax = [0 for i in range(num_fig)]
-        # for i in range(num_fig):
-        #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
         X, Y = np.meshgrid(x, y)
-        norm_bound = plt.Normalize(0.0, 1.0)
-        cmap = cm.plasma
+        surface_alpha_max = 0.5
+        surface_alpha_min = 0.0
+        norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
+        cmap = cm.coolwarm
+        cmap_surface = cmap(np.arange(cmap.N))
+        cmap_surface[:,-1] = np.linspace(surface_alpha_min, surface_alpha_max, cmap.N)
+        cmap_surface = colors.ListedColormap(cmap_surface)
+        cmap_surface.set_under((0,0,0,0), alpha=0.0)
         cmap.set_under((0,0,0,0), alpha=0.0)
-        surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, cmap=cmap)
+        surf = ax.plot_surface(X, Y, z, rstride=1, cstride=1, norm=norm_bound, cmap=cmap_surface)
         cbar = fig.colorbar(surf, shrink=0.75)
-        cbar.set_label("R2")
-        ax.contour(X, Y, z[0], levels=10, norm=norm_bound, cmap=cmap)
-        ax.set_xlim(X.min(), X.max())
-        ax.set_ylim(Y.min(), Y.max())
+        cbar.set_label("R2", fontsize=50)
+        cbar.ax.tick_params(labelsize=40)
+        cntr_z = ax.contour(X, Y, z, \
+            levels=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], \
+            zdir="z", offset=0.0, norm=norm_bound, cmap=cmap)
+        cntr_z.clabel(inline=1, colors="k", fontsize=5, use_clabeltext=True)
+        index_xmax, index_ymax = np.unravel_index(np.argmax(z), z.shape)
+        xmax = X[index_xmax, index_ymax]
+        ymax = Y[index_xmax, index_ymax]
+        zmax = z.max()
+        ax.plot([xmax,x.max()], [ymax, ymax], [0,0], c="k")
+        ax.plot([xmax,xmax], [y.min(), ymax], [0,0], c="k")
+        ax.plot([xmax,xmax], [ymax, ymax], [0,zmax], c="k")
+        ax.plot([xmax], [ymax], [zmax], marker="o", ms=30, c="k")
+        ax.text(xmax, y.min()-(y.max()-y.min())*0.5, 0, \
+            "{0}={1:6.3e}".format(xaxis, xmax), "x", zorder=10, fontsize=50)
+        ax.text(x.max()+(x.max()-x.min())*0.2, ymax, 0, \
+            "{0}={1:6.3e}".format(yaxis, ymax), "y", zorder=10, fontsize=50)
+        ax.text(xmax, ymax, 1.1*zmax, \
+            mode+"$_{max}$"+"={}".format(round(zmax,4)), zorder=10, fontsize=60)
+        ax.set_xlim(x.min(), x.max())
+        ax.set_ylim(y.min(), y.max())
         ax.set_zlim(0, 1.0)
-        fig.savefig("test.png", dpi=400)
-
-       
-# %%
-def plot(x, y, z, thirdparam="Cr"):
-    fig = plt.figure(figsize=(30,24))
-    ax = fig.add_subplot(1,1,1, projection="3d")
-    # ax = [0 for i in range(num_fig)]
-    # for i in range(num_fig):
-    #     ax[i] = fig.add_subplot(num_fig, num_fig, i)
-    X, Y = np.meshgrid(x, y)
-    surface_alpha_max = 0.5
-    surface_alpha_min = 0.0
-    norm_bound = plt.Normalize(vmin=0.0, vmax=1.0)
-    cmap = cm.coolwarm
-    cmap_surface = cmap(np.arange(cmap.N))
-    cmap_surface[:,-1] = np.linspace(surface_alpha_min, surface_alpha_max, cmap.N)
-    cmap_surface = colors.ListedColormap(cmap_surface)
-    cmap_surface.set_under((0,0,0,0), alpha=0.0)
-    cmap.set_under((0,0,0,0), alpha=0.0)
-    surf = ax.plot_surface(X, Y, z[0], rstride=1, cstride=1, norm=norm_bound, cmap=cmap_surface)
-    cbar = fig.colorbar(surf, shrink=0.75)
-    cbar.set_label("R2", fontsize=50)
-    cbar.ax.tick_params(labelsize=40)
-    cntr_z = ax.contour(X, Y, z[0], \
-        levels=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], \
-        zdir="z", offset=0.0, norm=norm_bound, cmap=cmap)
-    cntr_z.clabel(inline=1, colors="k", fontsize=5, use_clabeltext=True)
-    index_xmax, index_ymax = np.unravel_index(np.argmax(z[0]), z[0].shape)
-    maximum = (X[index_xmax, index_ymax], Y[index_xmax, index_ymax], z[0].max())
-    xmax = maximum[0]
-    ymax = maximum[1]
-    zmax = maximum[2]
-    ax.plot([xmax,x.max()], [ymax, ymax], [0,0], c="k")
-    ax.plot([xmax,xmax], [y.min(), ymax], [0,0], c="k")
-    ax.plot([xmax,xmax], [ymax, ymax], [0,zmax], c="k")
-    ax.plot([xmax], [ymax], [zmax], marker="o", ms=30, c="k")
-    ax.text(xmax, y.min()-0.12, 0, \
-        "{}={}".format("z", round(xmax,4)), "x", zorder=10, fontsize=50)
-    ax.text(x.max()+0.1, ymax-0.05, 0, \
-        "{}={}".format("m", round(ymax,4)), "y", zorder=10, fontsize=50)
-    ax.text(xmax, ymax, 1.1*zmax, \
-        "R2$_{max}$"+"={}".format(round(zmax,4)), zorder=10, fontsize=60)
-    ax.set_xlim(x.min(), x.max())
-    ax.set_ylim(y.min(), y.max())
-    ax.set_zlim(0, 1.0)
-    ax.set_zlabel("$R2$", fontsize=50)
-    ax.tick_params(axis="both", labelsize=40)
-    fig.suptitle("$C_r$={}".format("***"), fontsize=80)
-    # fig.savefig("test.png", dpi=400)
-    return fig
-
-
-
-
-# %%
-
-
+        ax.set_zlabel(mode, fontsize=50)
+        ax.tick_params(axis="both", labelsize=40)
+        fig.suptitle("{0}={1:4.2e}".format(thirdparam, val_thirdparam), fontsize=80)
+        # fig.savefig("test.png", dpi=400)
+        return fig, xmax, ymax, zmax
 
 
 
 if __name__ == "__main__":
-    # %%
+# %%
     PARAM = {"rho_f": 1190,     # [kg/m^3] solid fuel density
              "M_ox": 32.0e-3,   # [kg/mol]
              "T": 300,          # [K] oxidizer tempreature
@@ -460,11 +473,10 @@ if __name__ == "__main__":
              "C2": 1.61e-9,  # experimental constant of experimental regression rate formula
              "n": 1.0,       # experimental exponent constant of pressure
              "dx": 0.1e-3,      # [m] space resolution
-            #  "x_max": 12.6e-3,  # [m] maximum calculation region
              "r_0": 0.0,        # r=0.0 when x = 0, boudanry condition
              "rdot_0": 0.0,     # rdot=0 when x = 0, boundary condition
              "Vf_mode": False , # mode selection using axial or radial integretioin for mf calculation
-             "use_Vf": False    # mode selection for using experimental Vf insted of Vf empirical formula or not.
+             "use_Vf": True    # mode selection for using experimental Vf insted of Vf empirical formula or not.
             }
     
     BOUND = {"Cr": (1.0e-6, 30.0e-6),
@@ -472,12 +484,12 @@ if __name__ == "__main__":
              "m": (-0.5, 0.0)
              }
 
-    CONTOUR_PLOT = {"Cr_bnd": (14.0e-6, 16.0e-6),      # plot range of Cr
-                    "z_bnd": (0.2, 0.6),               # plot range of z
-                    "m_bnd": (-0.4, -0.1),             # plot range of m
-                    "resol": 100,                      # the number of calculating point for x and y axis direction
+    CONTOUR_PLOT = {"Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
+                    "z_bnd": (0.2, 0.5),               # plot range of z
+                    "m_bnd": (-0.5, -0.2),             # plot range of m
+                    "resol": 25,                      # the number of calculating point for x and y axis direction
                     "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
-                    "num_fig": 1                       # the number of figures. This value is the same of the number of variety of "thirdparam".
+                    "num_fig": 5                       # the number of figures. This value is the same of the number of variety of "thirdparam".
                     }
     
     # %%
@@ -487,41 +499,51 @@ if __name__ == "__main__":
     #      mode="R2", resolution=100, thirdparam="Cr", num_fig=1)
     # plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
 
-    # %%
+# %%
     inst = Fitting(PARAM)
     ## optimization for model constants
-    RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[(1.0e-6, 30.0e-6), (0.0, 1.0), (-0.5, 0.0)])
-    RESULT = {"Cr": RES_TMP.x[0],
-              "z": RES_TMP.x[1],
-              "m": RES_TMP.x[2],
-              "R2mean": -RES_TMP.fun,
-              "success": RES_TMP.success
-              }
-    ## calculate R2 for each experiment    
-    R2 = {}
-    for testname in inst.exp_cond:
-        R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    # RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[BOUND["Cr"], BOUND["z"], BOUND["m"]])
+    # RESULT = {"Cr": RES_TMP.x[0],
+    #           "z": RES_TMP.x[1],
+    #           "m": RES_TMP.x[2],
+    #           "R2mean": -RES_TMP.fun,
+    #           "success": RES_TMP.success
+    #           }
+    # ## calculate R2 for each experiment    
+    # R2 = {}
+    # for testname in inst.exp_cond:
+    #     R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
     
-    OUTPUT = {"cond": PARAM,
-              "bounds": BOUND,
-              "contour_plot": CONTOUR_PLOT,
-              "result": RESULT,
-              "R2": R2
-              }
+    # OUTPUT = {"cond": PARAM,
+    #           "bounds": BOUND,
+    #           "contour_plot": CONTOUR_PLOT,
+    #           "result": RESULT,
+    #           "R2": R2
+    #           }
     ## output calculation condition and result
     FLDNAME = datetime.now().strftime("%Y_%m%d_%H%M%S")
     os.mkdir(FLDNAME)
-    with open(os.path.join(FLDNAME, "result.json"), "w") as f:
-        json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
+    # with open(os.path.join(FLDNAME, "result.json"), "w") as f:
+    #     json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
     ## output figures which compare experimental and calculated result
-    FLDNAME_EXPCOMP = "fig_expcomp"
-    os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
-    FIG_COMP = inst.gen_excomp_figlist(RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
-    for testname, dic in FIG_COMP.items():
-        dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_EXPCOMP, "{}.png".format(testname)), dpi=300)
-    
-    # %%
-    # print("Cr={}, z={}, m={}, R2={}".format(res.x[0], res.x[1], res.x[2], -res.fun))
+    # FLDNAME_EXPCOMP = "fig_expcomp"
+    # os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
+    # FIG_COMP = inst.gen_excomp_figlist(RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    # for testname, dic in FIG_COMP.items():
+    #     dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_EXPCOMP, "{}.png".format(testname)), dpi=300)
+
+# %%
+    ## output figures which is contour map for calculated coefficient
+    print("\nStart generating the contour map of coefficient.")
+    print("If you do not want a contourmap, please execute keyboard interruption")
+    FLDNAME_CONTOUR = "fig_coeff_contour"
+    os.mkdir(os.path.join(FLDNAME, FLDNAME_CONTOUR))
+    FIG_COEFF = inst.gen_R_R2_figlist(bounds=[CONTOUR_PLOT["Cr_bnd"], CONTOUR_PLOT["z_bnd"], CONTOUR_PLOT["m_bnd"]],\
+         mode="R2", resolution=CONTOUR_PLOT["resol"], thirdparam=CONTOUR_PLOT["thirdparam"], num_fig=CONTOUR_PLOT["num_fig"])
+    for coef_dic in FIG_COEFF:
+        coef_dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_CONTOUR,\
+            "{0}={1:5.3e}.png".format(CONTOUR_PLOT["thirdparam"], coef_dic["third"])), dpi=300)
+
     print("Compleated!")
 
 # %%

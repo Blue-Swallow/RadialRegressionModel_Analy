@@ -55,7 +55,10 @@ class Main:
             r_range = self.r[:i]
             rdot_range = self.rdot[:i]
         if self.cond["Vf_mode"]:
-            Vf = self.func_Vf(self.Vox, self.Pc)
+            if self.cond["use_Vf"]:
+                Vf = self.cond["Vf"]
+            else:
+                Vf = self.func_Vf(self.Vox, self.Pc)
             mf = rho_f*Vf*np.pi*(np.power(self.r[i], 2) +d*self.r[i] )  # calculate using integretion for radial direction
         else:
             mf = 2*np.pi*rho_f*simps((r_range + d/2)*rdot_range, x_range)  # calculate using integretion for axial direction
@@ -101,7 +104,10 @@ class Main:
             rdot_range = np.append(rdot_range, rdoti)
             x_range = np.array(self.x[:i])
             x_range = np.append(x_range, self.x[i])
-        ri = trapz(rdot_range, x_range)/self.func_Vf(self.Vox, self.Pc)
+        if self.cond["use_Vf"]:
+            ri = trapz(rdot_range, x_range)/self.cond["Vf"]
+        else:
+            ri = trapz(rdot_range, x_range)/self.func_Vf(self.Vox, self.Pc)
         return(ri)
 
     def error_rdot(self, rdoti, i):
