@@ -3,5 +3,6 @@ __pychache__
 */*
 *.xlsx
 *.png
+*.zip
 !exp_dat/sample
 
