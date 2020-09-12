@@ -337,9 +337,9 @@ class Fitting:
         ax.set_ylabel("Radial regression distance $r$ [mm]")
         return fig
 
-    def gen_R_R2_figlist(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, **kwargs):
+    def gen_R_R2_figlist(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, fldname=None, **kwargs):
         z_array, x_array, y_array, third_array = self.cal_R_R2_contour(bounds=bounds, mode=mode,\
-            resolution=resolution, thirdparam=thirdparam, num_fig=num_fig, **kwargs)
+            resolution=resolution, thirdparam=thirdparam, num_fig=num_fig, fldname=fldname, **kwargs)
         fig_list = []
         for z, third in zip(z_array, third_array):
             fig, xmax, ymax, zmax = self.plot_R_R2_contour(x_array, y_array, z, third, thirdparam=thirdparam, mode=mode)
@@ -353,7 +353,7 @@ class Fitting:
         return fig_list
             
 
-    def cal_R_R2_contour(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, **kwargs):
+    def cal_R_R2_contour(self, bounds, mode="R2", resolution=50, thirdparam="Cr", num_fig=9, fldname=None, **kwargs):
         bound_Cr = bounds[0]
         bound_z = bounds[1]
         bound_m = bounds[2]
@@ -401,6 +401,11 @@ class Fitting:
                     else:
                         coef = self.get_R_R2_mean(Cr=y_array[j], z=x_array[j], m=third_array[i], mode=mode)
                     z[i, j, k] = coef
+            if fldname is None:
+                pass
+            else:
+                df = pd.DataFrame(z[i], columns=x_array, index=y_array)
+                df.to_csv(os.path.join(fldname, "{0}={1:5.3e}.csv".format(thirdparam, third_array[i])))
         return z, x_array, y_array, third_array
 
     def plot_R_R2_contour(self, x, y, z, val_thirdparam, thirdparam="Cr", mode="R2"):
@@ -456,7 +461,6 @@ class Fitting:
         ax.set_zlabel(mode, fontsize=50)
         ax.tick_params(axis="both", labelsize=40)
         fig.suptitle("{0}={1:4.2e}".format(thirdparam, val_thirdparam), fontsize=80)
-        # fig.savefig("test.png", dpi=400)
         return fig, xmax, ymax, zmax
 
 
@@ -484,66 +488,63 @@ if __name__ == "__main__":
              "m": (-0.5, 0.0)
              }
 
-    CONTOUR_PLOT = {"Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
+    CONTOUR_PLOT = {"plot": True,
+                    "Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
                     "z_bnd": (0.2, 0.5),               # plot range of z
                     "m_bnd": (-0.5, -0.2),             # plot range of m
-                    "resol": 25,                      # the number of calculating point for x and y axis direction
+                    "resol": 4,                      # the number of calculating point for x and y axis direction
                     "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
                     "num_fig": 5                       # the number of figures. This value is the same of the number of variety of "thirdparam".
                     }
     
-    # %%
-    # Temporal Code to Debug the function of plot
-    # inst = Fitting(**PARAM)
-    # x_array, y_array, z_array = inst.plot_R_R2(bounds=[(14e-6, 16e-6), (0.2, 0.6), (-0.4, -0.1)],\
-    #      mode="R2", resolution=100, thirdparam="Cr", num_fig=1)
-    # plot(x_array, y_array, z_array, thirdparam="Cr", num_fig=1)
-
 # %%
     inst = Fitting(PARAM)
     ## optimization for model constants
-    # RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[BOUND["Cr"], BOUND["z"], BOUND["m"]])
-    # RESULT = {"Cr": RES_TMP.x[0],
-    #           "z": RES_TMP.x[1],
-    #           "m": RES_TMP.x[2],
-    #           "R2mean": -RES_TMP.fun,
-    #           "success": RES_TMP.success
-    #           }
+    RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[BOUND["Cr"], BOUND["z"], BOUND["m"]])
+    RESULT = {"Cr": RES_TMP.x[0],
+              "z": RES_TMP.x[1],
+              "m": RES_TMP.x[2],
+              "R2mean": -RES_TMP.fun,
+              "success": RES_TMP.success
+              }
+
     # ## calculate R2 for each experiment    
-    # R2 = {}
-    # for testname in inst.exp_cond:
-    #     R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    R2 = {}
+    for testname in inst.exp_cond:
+        R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
     
-    # OUTPUT = {"cond": PARAM,
-    #           "bounds": BOUND,
-    #           "contour_plot": CONTOUR_PLOT,
-    #           "result": RESULT,
-    #           "R2": R2
-    #           }
+    OUTPUT = {"cond": PARAM,
+              "bounds": BOUND,
+              "contour_plot": CONTOUR_PLOT,
+              "result": RESULT,
+              "R2": R2
+              }
+
     ## output calculation condition and result
     FLDNAME = datetime.now().strftime("%Y_%m%d_%H%M%S")
     os.mkdir(FLDNAME)
-    # with open(os.path.join(FLDNAME, "result.json"), "w") as f:
-    #     json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
-    ## output figures which compare experimental and calculated result
-    # FLDNAME_EXPCOMP = "fig_expcomp"
-    # os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
-    # FIG_COMP = inst.gen_excomp_figlist(RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
-    # for testname, dic in FIG_COMP.items():
-    #     dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_EXPCOMP, "{}.png".format(testname)), dpi=300)
+    with open(os.path.join(FLDNAME, "result.json"), "w") as f:
+        json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
+    # output figures which compare experimental and calculated result
+    FLDNAME_EXPCOMP = "fig_expcomp"
+    os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
+    FIG_COMP = inst.gen_excomp_figlist(RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
+    for testname, dic in FIG_COMP.items():
+        dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_EXPCOMP, "{}.png".format(testname)), dpi=300)
 
 # %%
     ## output figures which is contour map for calculated coefficient
-    print("\nStart generating the contour map of coefficient.")
-    print("If you do not want a contourmap, please execute keyboard interruption")
-    FLDNAME_CONTOUR = "fig_coeff_contour"
-    os.mkdir(os.path.join(FLDNAME, FLDNAME_CONTOUR))
-    FIG_COEFF = inst.gen_R_R2_figlist(bounds=[CONTOUR_PLOT["Cr_bnd"], CONTOUR_PLOT["z_bnd"], CONTOUR_PLOT["m_bnd"]],\
-         mode="R2", resolution=CONTOUR_PLOT["resol"], thirdparam=CONTOUR_PLOT["thirdparam"], num_fig=CONTOUR_PLOT["num_fig"])
-    for coef_dic in FIG_COEFF:
-        coef_dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_CONTOUR,\
-            "{0}={1:5.3e}.png".format(CONTOUR_PLOT["thirdparam"], coef_dic["third"])), dpi=300)
-
+    if CONTOUR_PLOT["plot"]:
+        print("\nStart generating the contour map of coefficient.")
+        print("If you do not want a contourmap, please execute keyboard interruption")
+        FLDNAME_CONTOUR = "fig_coeff_contour"
+        os.mkdir(os.path.join(FLDNAME, FLDNAME_CONTOUR))
+        FIG_COEFF = inst.gen_R_R2_figlist(bounds=[CONTOUR_PLOT["Cr_bnd"], CONTOUR_PLOT["z_bnd"], CONTOUR_PLOT["m_bnd"]],\
+            mode="R2", resolution=CONTOUR_PLOT["resol"], thirdparam=CONTOUR_PLOT["thirdparam"], num_fig=CONTOUR_PLOT["num_fig"],\
+            fldname=os.path.join(FLDNAME, FLDNAME_CONTOUR))
+        for coef_dic in FIG_COEFF:
+            coef_dic["fig"].savefig(os.path.join(FLDNAME, FLDNAME_CONTOUR,\
+                "{0}={1:5.3e}.png".format(CONTOUR_PLOT["thirdparam"], coef_dic["third"])), dpi=300)
+    else:
+        pass
     print("Compleated!")
-
-# %%
