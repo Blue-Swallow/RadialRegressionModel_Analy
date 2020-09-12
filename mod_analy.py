@@ -492,7 +492,7 @@ if __name__ == "__main__":
                     "Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
                     "z_bnd": (0.2, 0.5),               # plot range of z
                     "m_bnd": (-0.5, -0.2),             # plot range of m
-                    "resol": 4,                      # the number of calculating point for x and y axis direction
+                    "resol": 25,                      # the number of calculating point for x and y axis direction
                     "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
                     "num_fig": 5                       # the number of figures. This value is the same of the number of variety of "thirdparam".
                     }
