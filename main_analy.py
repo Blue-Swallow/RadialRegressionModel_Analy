@@ -48,22 +48,25 @@ class Fitting:
     shape_dat: dict of pandas.DataFrame
         dictionary of regressioin shape
     """
-    def __init__(self, cond):
+    def __init__(self, cond, fldpath):
         """ Constructor
         
         Parameters
         ----------
         cond : dict
             dictionary of setting for fitting calculation
+        fldpath : string
+            folder path which contains "cond.py" and each experimental data folder.
         """
         self.param = cond
+        self.fldpath = fldpath
         if "fldlist" in cond:
             self.fldlist = cond["fldlist"]
         else:
-            self.fldlist = self._get_fldlist_()
-        self.exp_cond, self.shape_dat = self._read_dat_(self.fldlist)
+            self.fldlist = self._get_fldlist_(self.fldpath)
+        self.exp_cond, self.shape_dat = self._read_dat_(self.fldlist, fldpath)
 
-    def _get_fldlist_(self):
+    def _get_fldlist_(self, fldpath):
         """function to get the list of experimental folder name
         
         Returns
@@ -71,18 +74,20 @@ class Fitting:
         fldlist: list of string
             dictionary of experimental folder name
         """
-        fldlist = os.listdir(path="exp_dat")
-        if "sample" in fldlist:
-            if len(fldlist) == 1:
-                print("Please make folder whose name shoud not be \"sample\" and contains data files.")
-                sys.exit()
-            else:
-                fldlist.remove("sample")
+        # fldlist = os.listdir(path="exp_dat")
+        fldlist = os.listdir(path=fldpath)
+        fldlist = [f for f in fldlist if os.path.isdir(os.path.join(fldpath, f))] # eliminate the list of files
+        fldlist.remove("__pycache__") # eliminate chach folder path
+        fldlist = [txt for txt in fldlist if "sample" not in txt] # eliminate sample folder
+        fldlist = [txt for txt in fldlist if "fig_" not in txt] # eliminate result folder
+        if len(fldlist) == 0:
+            print("Please make folder whose name shoud not be \"sample*\" and contains data files.")
+            sys.exit()
         else:
             pass
         return fldlist
 
-    def _read_dat_(self, fldlist):
+    def _read_dat_(self, fldlist, fldpath):
         """ function to read each experimental condition and data of regression shape
         
         Parameters
@@ -100,14 +105,16 @@ class Fitting:
         exp_cond = {}
         shape_dat = {}
         for fldname in fldlist:
-            with open(os.path.join("exp_dat", fldname, "exp_cond.json")) as f:
+            # with open(os.path.join("exp_dat", fldname, "exp_cond.json")) as f:
+            with open(os.path.join(fldpath, fldname, "exp_cond.json")) as f:
                 tmp = json.load(f)
                 tmp["Pc"] = tmp["Pc"]*1e+6      # convert unit MPa to Pa
                 tmp["d"] = tmp["d"]*1e-3        # convert unit mm to m
                 if tmp["Vf"] is not None:
                     tmp["Vf"] = tmp["Vf"]*1e-3  # convert unit mm to m
                 exp_cond[fldname] = tmp
-            tmp = pd.read_csv(os.path.join("exp_dat", fldname, "shape_dat.csv"), header=0, skiprows=[1,])
+            # tmp = pd.read_csv(os.path.join("exp_dat", fldname, "shape_dat.csv"), header=0, skiprows=[1,])
+            tmp = pd.read_csv(os.path.join(fldpath, fldname, "shape_dat.csv"), header=0, skiprows=[1,])
             tmp.x = tmp.x*1e-3  # convert unit mm to m
             tmp.r = tmp.r*1e-3  # convert unit mm to m
             shape_dat[fldname] = tmp
@@ -463,42 +470,76 @@ class Fitting:
         fig.suptitle("{0}={1:4.2e}".format(thirdparam, val_thirdparam), fontsize=80)
         return fig, xmax, ymax, zmax
 
+def read_cond():
+    """ Function to assign a folder and read condition file: "cond.py".
+    
+    Returns
+    -------
+    [type]
+        [description]
+    """
+    name_cond_py = "cond.py" 
+    fldname = input("Please input the name of folder which contains regression shape files and calculating condition such as {}.\n>>".format(name_cond_py))
+    if os.path.exists(fldname):
+        if os.path.exists(os.path.join(fldname, name_cond_py)):
+            sys.path.append(os.path.join(os.path.dirname(__file__), fldname))
+            import cond
+            dic_cond = {"PARAM": cond.PARAM,
+                        "BOUND": cond.BOUND,
+                        "CONTOUR_PLOT": cond.CONTOUR_PLOT
+                        }
+        else:
+            print("There is no python module of calculation condition, \"{}\"".format(name_cond_py))
+            sys.exit()
+    else:
+        print("There is no such a folder, \"{}\"".format(fldname))
+        sys.exit()
+    return fldname, dic_cond
+
 
 
 if __name__ == "__main__":
 # %%
-    PARAM = {"rho_f": 1190,     # [kg/m^3] solid fuel density
-             "M_ox": 32.0e-3,   # [kg/mol]
-             "T": 300,          # [K] oxidizer tempreature
-             "Cr_init": 15e-6,# Initial guess value for coefficent fitting
-             "z_init": 0.4,     # Initial guess value for coefficent fitting
-             "m_init": -0.26,   # Initial guess value for coefficent fitting
-             "C1": 1.39e-7,  # experimental constant of experimental regression rate formula
-             "C2": 1.61e-9,  # experimental constant of experimental regression rate formula
-             "n": 1.0,       # experimental exponent constant of pressure
-             "dx": 0.1e-3,      # [m] space resolution
-             "r_0": 0.0,        # r=0.0 when x = 0, boudanry condition
-             "rdot_0": 0.0,     # rdot=0 when x = 0, boundary condition
-             "Vf_mode": False , # mode selection using axial or radial integretioin for mf calculation
-             "use_Vf": True    # mode selection for using experimental Vf insted of Vf empirical formula or not.
-            }
+    # PARAM = {"rho_f": 1190,     # [kg/m^3] solid fuel density
+    #          "M_ox": 32.0e-3,   # [kg/mol]
+    #          "T": 300,          # [K] oxidizer tempreature
+    #          "Cr_init": 15e-6,# Initial guess value for coefficent fitting
+    #          "z_init": 0.4,     # Initial guess value for coefficent fitting
+    #          "m_init": -0.26,   # Initial guess value for coefficent fitting
+    #          "C1": 1.39e-7,  # experimental constant of experimental regression rate formula
+    #          "C2": 1.61e-9,  # experimental constant of experimental regression rate formula
+    #          "n": 1.0,       # experimental exponent constant of pressure
+    #          "dx": 0.1e-3,      # [m] space resolution
+    #          "r_0": 0.0,        # r=0.0 when x = 0, boudanry condition
+    #          "rdot_0": 0.0,     # rdot=0 when x = 0, boundary condition
+    #          "Vf_mode": False , # mode selection using axial or radial integretioin for mf calculation
+    #          "use_Vf": True    # mode selection for using experimental Vf insted of Vf empirical formula or not.
+    #         }
     
-    BOUND = {"Cr": (1.0e-6, 30.0e-6),
-             "z": (0.0, 1.0),
-             "m": (-0.5, 0.0)
-             }
+    # BOUND = {"Cr": (1.0e-6, 30.0e-6),
+    #          "z": (0.0, 1.0),
+    #          "m": (-0.5, 0.0)
+    #          }
 
-    CONTOUR_PLOT = {"plot": True,
-                    "Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
-                    "z_bnd": (0.2, 0.5),               # plot range of z
-                    "m_bnd": (-0.5, -0.2),             # plot range of m
-                    "resol": 25,                      # the number of calculating point for x and y axis direction
-                    "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
-                    "num_fig": 5                       # the number of figures. This value is the same of the number of variety of "thirdparam".
-                    }
+    # CONTOUR_PLOT = {"plot": True,
+    #                 "Cr_bnd": (14.0e-6, 19.0e-6),      # plot range of Cr
+    #                 "z_bnd": (0.2, 0.5),               # plot range of z
+    #                 "m_bnd": (-0.5, -0.2),             # plot range of m
+    #                 "resol": 25,                      # the number of calculating point for x and y axis direction
+    #                 "thirdparam": "Cr",                # select the thrid parameter. selected parameter is varied with the number of "num_fig"
+    #                 "num_fig": 5                       # the number of figures. This value is the same of the number of variety of "thirdparam".
+    #                 }
     
 # %%
-    inst = Fitting(PARAM)
+    ## read the condition file
+    FLDNAME, COND = read_cond()
+    PARAM = COND["PARAM"]
+    BOUND = COND["BOUND"]
+    CONTOUR_PLOT = COND["CONTOUR_PLOT"]
+    
+    ## generating instance
+    inst = Fitting(PARAM, FLDNAME)
+
     ## optimization for model constants
     RES_TMP = inst.optimize_modelconst(mode="R2", method="global", bounds=[BOUND["Cr"], BOUND["z"], BOUND["m"]])
     RESULT = {"Cr": RES_TMP.x[0],
@@ -508,7 +549,7 @@ if __name__ == "__main__":
               "success": RES_TMP.success
               }
 
-    # ## calculate R2 for each experiment    
+    ## calculate R2 for each experiment    
     R2 = {}
     for testname in inst.exp_cond:
         R2[testname] = inst.get_R_R2(testname, RESULT["Cr"], RESULT["z"], RESULT["m"], mode="R2")
@@ -521,10 +562,11 @@ if __name__ == "__main__":
               }
 
     ## output calculation condition and result
-    FLDNAME = datetime.now().strftime("%Y_%m%d_%H%M%S")
-    os.mkdir(FLDNAME)
+    # FLDNAME = datetime.now().strftime("%Y_%m%d_%H%M%S")
+    # os.mkdir(FLDNAME)
     with open(os.path.join(FLDNAME, "result.json"), "w") as f:
         json.dump(OUTPUT, f, ensure_ascii=False, indent=4)
+    
     # output figures which compare experimental and calculated result
     FLDNAME_EXPCOMP = "fig_expcomp"
     os.mkdir(os.path.join(FLDNAME, FLDNAME_EXPCOMP))
